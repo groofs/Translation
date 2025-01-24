@@ -74,14 +74,23 @@ def download_youtube_audio(video_url, output_audio_path="audio.webm"):
         return None
 
 def convert_to_wav_ffmpeg(audio_path, output_wav_path="temp_audio.wav"):
-    """Convert the downloaded audio to WAV format using ffmpeg."""
     try:
-        command = f"ffmpeg -i {audio_path} -vn -ar 16000 -ac 1 -ab 192k -f wav {output_wav_path}"
-        subprocess.run(command, shell=True, check=True)
+        if not os.path.exists(audio_path):
+            st.error(f"Audio file not found: {audio_path}")
+            return None
+
+        # Safeguard file paths with quotes to handle spaces or special characters
+        command = f'ffmpeg -i "{audio_path}" -vn -ar 16000 -ac 1 -ab 192k -f wav "{output_wav_path}"'
+        subprocess.run(command, shell=True, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         return output_wav_path
-    except Exception as e:
-        st.error(f"Error converting audio with ffmpeg: {e}")
+    except subprocess.CalledProcessError as e:
+        # Capture FFmpeg error output for better debugging
+        st.error(f"FFmpeg conversion error: {e.stderr.decode('utf-8')}")
         return None
+    except Exception as e:
+        st.error(f"Unexpected error during conversion: {e}")
+        return None
+
 
 def extract_text_from_audio(wav_path, language='en-US'):
     """Transcribe audio from a WAV file using SpeechRecognition."""
