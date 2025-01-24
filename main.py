@@ -1,7 +1,7 @@
 import os
 import yt_dlp
 from gtts import gTTS
-import speech_recognition as sr 
+import speech_recognition as sr
 import streamlit as st
 from googletrans import LANGUAGES, Translator
 from sumy.parsers.plaintext import PlaintextParser
@@ -66,8 +66,11 @@ def download_youtube_audio(video_url, output_audio_path="audio.webm"):
 
 def convert_to_wav_ffmpeg(audio_path, output_wav_path="temp_audio.wav"):
     try:
-        command = f"ffmpeg -i {audio_path} -vn -ar 16000 -ac 1 -ab 192k -f wav {output_wav_path}"
-        subprocess.run(command, shell=True, check=True)
+        command = [
+            "ffmpeg", "-i", audio_path, "-vn", "-ar", "16000", "-ac", "1",
+            "-ab", "192k", "-f", "wav", output_wav_path
+        ]
+        subprocess.run(command, check=True)
         return output_wav_path
     except Exception as e:
         st.error(f"FFmpeg conversion error: {e}")
@@ -119,16 +122,20 @@ def create_pdf(summary_text):
 
 def read_uploaded_file(uploaded_file):
     file_type = uploaded_file.name.split('.')[-1].lower()
-    if file_type == "txt":
-        return uploaded_file.read().decode("utf-8")
-    elif file_type == "pdf":
-        pdf_reader = PyPDF2.PdfReader(uploaded_file)
-        return "".join(page.extract_text() for page in pdf_reader.pages)
-    elif file_type == "docx":
-        doc = Document(uploaded_file)
-        return "\n".join(paragraph.text for paragraph in doc.paragraphs)
-    else:
-        st.error("Unsupported file format. Upload .txt, .pdf, or .docx.")
+    try:
+        if file_type == "txt":
+            return uploaded_file.read().decode("utf-8")
+        elif file_type == "pdf":
+            pdf_reader = PyPDF2.PdfReader(uploaded_file)
+            return "".join(page.extract_text() for page in pdf_reader.pages)
+        elif file_type == "docx":
+            doc = Document(uploaded_file)
+            return "\n".join(paragraph.text for paragraph in doc.paragraphs)
+        else:
+            st.error("Unsupported file format. Upload .txt, .pdf, or .docx.")
+            return None
+    except Exception as e:
+        st.error(f"File reading error: {e}")
         return None
 
 def add_blog(title, content, category, tags, language):
@@ -192,120 +199,3 @@ def render_blog_list():
                 save_blogs()
     else:
         st.write("No blogs available for the selected category.")
-
-# Streamlit UI
-st.sidebar.title("Navigation")
-page = st.sidebar.selectbox("Select a page", [
-    "Translate Audio", "Summarize Audio", "Summarize Text File",
-    "Translate Text File", "Publish Blog", "Blog Portal", "Blog Analytics"
-])
-
-if page == "Translate Audio":
-    st.title("YouTube Audio Language Translator")
-    video_url = st.text_input("Enter YouTube Video URL:")
-    to_language_name = st.selectbox("Select Target Language:", list(LANGUAGES.values()))
-    to_language = get_language_code(to_language_name)
-    if st.button("Start") and video_url:
-        st.write("Downloading audio...")
-        audio_path = download_youtube_audio(video_url)
-        if audio_path:
-            st.write("Converting audio to WAV...")
-            wav_path = convert_to_wav_ffmpeg(audio_path)
-            if wav_path:
-                st.write("Extracting text from audio...")
-                detected_text = extract_text_from_audio(wav_path)
-                if detected_text:
-                    from_language = detect_language(detected_text)
-                    st.write(f"Detected Language: {from_language}")
-                    st.write(f"Translating to {to_language_name}...")
-                    translated_text = translator_function(detected_text, from_language, to_language)
-                    if translated_text:
-                        st.write("Generating translated audio file...")
-                        translated_audio_file = text_to_voice(translated_text, to_language)
-                        if translated_audio_file and os.path.exists(translated_audio_file):
-                            with open(translated_audio_file, "rb") as audio_file:
-                                st.download_button(
-                                    label="Download Translated Audio",
-                                    data=audio_file,
-                                    file_name="translated_audio.mp3",
-                                    mime="audio/mp3"
-                                )
-                            os.remove(translated_audio_file)
-                    os.remove(wav_path)
-            if os.path.exists(audio_path):
-                os.remove(audio_path)
-
-elif page == "Summarize Audio":
-    st.title("Audio Summarization")
-    audio_file = st.file_uploader("Upload Audio File", type=["wav", "mp3", "aac", "ogg"])
-    if audio_file:
-        wav_path = convert_to_wav_ffmpeg(audio_file.name)
-        if wav_path:
-            detected_text = extract_text_from_audio(wav_path)
-            if detected_text:
-                summary = summarize_text_with_sumy(detected_text)
-                st.text_area("Summary", summary, height=200)
-                pdf_file = create_pdf(summary)
-                with open(pdf_file, "rb") as pdf:
-                    st.download_button("Download Summary PDF", data=pdf, file_name="summary.pdf", mime="application/pdf")
-                os.remove(pdf_file)
-
-elif page == "Summarize Text File":
-    st.title("Text File Summarization")
-    uploaded_file = st.file_uploader("Upload Text File", type=["txt", "pdf", "docx"])
-    if uploaded_file:
-        text = read_uploaded_file(uploaded_file)
-        if text:
-            sentence_count = st.slider("Number of Summary Sentences", 1, 10, 3)
-            summary = summarize_text_with_sumy(text, sentence_count)
-            st.text_area("Summary", summary, height=200)
-            pdf_file = create_pdf(summary)
-            with open(pdf_file, "rb") as pdf:
-                st.download_button("Download Summary PDF", data=pdf, file_name="summary.pdf", mime="application/pdf")
-            os.remove(pdf_file)
-
-elif page == "Translate Text File":
-    st.title("Text File Translator")
-    uploaded_file = st.file_uploader("Upload Text File", type=["txt", "pdf", "docx"])
-    if uploaded_file:
-        text = read_uploaded_file(uploaded_file)
-        if text:
-            from_language = detect_language(text)
-            to_language_name = st.selectbox("Select Target Language:", list(LANGUAGES.values()))
-            to_language = get_language_code(to_language_name)
-            if st.button("Translate"):
-                translated_text = translator_function(text, from_language, to_language)
-                if translated_text:
-                    st.text_area("Translated Text", translated_text, height=200)
-                    pdf_file = create_pdf(translated_text)
-                    with open(pdf_file, "rb") as pdf:
-                        st.download_button("Download Translated PDF", data=pdf, file_name="translated.pdf", mime="application/pdf")
-                    os.remove(pdf_file)
-
-elif page == "Publish Blog":
-    st.title("Publish Blog")
-    title = st.text_input("Blog Title")
-    content = st.text_area("Blog Content", height=200)
-    category = st.text_input("Category")
-    tags = st.text_input("Tags (comma-separated)")
-    language = st.selectbox("Language", list(LANGUAGES.values()))
-    if st.button("Publish"):
-        add_blog(title, content, category, tags.split(","), language)
-        st.success("Blog published successfully!")
-
-elif page == "Blog Portal":
-    st.title("Blog Portal")
-    render_blog_list()
-
-elif page == "Blog Analytics":
-    st.title("Blog Analytics")
-    st.write(f"Total Blogs: {len(blogs)}")
-    if blogs:
-        data = {
-            "Title": [blog["title"] for blog in blogs],
-            "Category": [blog.get("category", "Uncategorized") for blog in blogs],
-            "Views": [blog["views"] for blog in blogs],
-            "Likes": [blog["likes"] for blog in blogs]
-        }
-        df = pd.DataFrame(data)
-        st.table(df)
