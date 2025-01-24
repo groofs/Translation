@@ -1,6 +1,7 @@
 import os
 import yt_dlp
 from gtts import gTTS
+import speech_recognition as sr 
 import streamlit as st
 from googletrans import LANGUAGES, Translator
 from sumy.parsers.plaintext import PlaintextParser
