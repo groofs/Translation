@@ -8,7 +8,7 @@ from sumy.parsers.plaintext import PlaintextParser
 from sumy.nlp.tokenizers import Tokenizer
 from sumy.summarizers.lsa import LsaSummarizer
 from fpdf import FPDF
-import subprocess
+import ffmpeg
 import PyPDF2
 from docx import Document
 import json
@@ -66,13 +66,11 @@ def download_youtube_audio(video_url, output_audio_path="audio.webm"):
 
 def convert_to_wav_ffmpeg(audio_path, output_wav_path="temp_audio.wav"):
     try:
-        command = [
-            "ffmpeg", "-i", audio_path, "-vn", "-ar", "16000", "-ac", "1",
-            "-ab", "192k", "-f", "wav", output_wav_path
-        ]
-        subprocess.run(command, check=True)
+        stream = ffmpeg.input(audio_path)
+        stream = ffmpeg.output(stream, output_wav_path, format='wav', acodec='pcm_s16le', ac=1, ar='16k')
+        ffmpeg.run(stream)
         return output_wav_path
-    except Exception as e:
+    except ffmpeg.Error as e:
         st.error(f"FFmpeg conversion error: {e}")
         return None
 
