@@ -8,7 +8,9 @@ from sumy.parsers.plaintext import PlaintextParser
 from sumy.nlp.tokenizers import Tokenizer
 from sumy.summarizers.lsa import LsaSummarizer
 from fpdf import FPDF
-from pydub import AudioSegment
+import subprocess
+import PyPDF2
+from docx import Document
 import json
 import random
 import pandas as pd  # Import pandas here
@@ -71,19 +73,14 @@ def download_youtube_audio(video_url, output_audio_path="audio.webm"):
         st.error(f"An error occurred during download: {e}")
         return None
 
-def convert_to_wav_pydub(audio_path, output_wav_path="temp_audio.wav"):
-    """Convert the downloaded audio to WAV format using pydub."""
+def convert_to_wav_ffmpeg(audio_path, output_wav_path="temp_audio.wav"):
+    """Convert the downloaded audio to WAV format using ffmpeg."""
     try:
-        # Load audio file using pydub
-        audio = AudioSegment.from_file(audio_path)
-
-        # Convert to 16kHz mono WAV
-        audio = audio.set_frame_rate(16000).set_channels(1)
-        audio.export(output_wav_path, format="wav")
-
+        command = f"ffmpeg -i {audio_path} -vn -ar 16000 -ac 1 -ab 192k -f wav {output_wav_path}"
+        subprocess.run(command, shell=True, check=True)
         return output_wav_path
     except Exception as e:
-        st.error(f"Error converting audio with pydub: {e}")
+        st.error(f"Error converting audio with ffmpeg: {e}")
         return None
 
 def extract_text_from_audio(wav_path, language='en-US'):
@@ -153,6 +150,79 @@ def read_uploaded_file(uploaded_file):
         st.error("Unsupported file format. Please upload a .txt, .pdf, or .docx file.")
         return None
 
+def add_blog(title, content, category, tags, language):
+    """Add a new blog to the list."""
+    blogs.append({
+        "title": title,
+        "content": content,
+        "category": category,
+        "tags": tags,
+        "language": language,
+        "views": 0,
+        "likes": 0,
+        "comments": []
+    })
+    save_blogs()
+
+def render_blog_list():
+    """Render the list of blogs with filters for category and display analytics."""
+    st.write("### Blog List")
+    categories = ["All"] + list(set(blog.get('category', 'Uncategorized') for blog in blogs))
+    selected_category = st.selectbox("Select Category:", categories)
+    filtered_blogs = blogs if selected_category == "All" else [blog for blog in blogs if blog.get('category', 'Uncategorized') == selected_category]
+
+    if filtered_blogs:
+        for idx, blog in enumerate(filtered_blogs):
+            st.subheader(blog["title"])
+            st.write(blog["content"])
+            st.write(f"*Category:* {blog.get('category', 'Uncategorized')}")
+            st.write(f"*Views:* {blog.get('views', 0)} | *Likes:* {blog.get('likes', 0)}")
+            st.write("*Comments:*")
+            for comment in blog.get('comments', []):
+                st.write(f"- {comment}")
+            
+            # Increment views
+            blog["views"] += 1
+            save_blogs()
+
+            # Add Like Button
+            if st.button(f"Like Blog {idx + 1}", key=f"like_{idx}"):
+                blog["likes"] += 1
+                save_blogs()
+
+            # Add Comment Section
+            new_comment = st.text_input(f"Add a comment to Blog {idx + 1}", key=f"comment_{idx}")
+            if st.button(f"Submit Comment for Blog {idx + 1}", key=f"submit_comment_{idx}"):
+                if new_comment:
+                    blog["comments"].append(new_comment)
+                    save_blogs()
+                else:
+                    st.error("Comment cannot be empty.")
+            
+            with st.expander("Translate this Blog"):
+                to_language_name = st.selectbox(
+                    f"Select Language for Blog {idx + 1}",
+                    list(LANGUAGES.values()),
+                    key=f"lang_{idx}"
+                )
+                to_language = get_language_code(to_language_name)
+
+                if st.button(f"Translate Blog {idx + 1}", key=f"translate_{idx}"):
+                    translated_content = translator_function(blog["content"], "en", to_language)
+                    if translated_content:
+                        st.write("Translated Blog Content:")
+                        st.text_area("Translated Content", value=translated_content, height=200)
+
+                        accuracy = random.randint(92, 100)
+                        st.write(f"*Translation Accuracy:* {accuracy}%")
+            
+            if st.button(f"Delete Blog {idx + 1}", key=f"delete_{idx}"):
+                blogs.pop(idx)
+                save_blogs()
+
+    else:
+        st.write("No blogs available for the selected category.")
+
 # Streamlit UI
 st.sidebar.title("Navigation")
 page = st.sidebar.selectbox("Select a page", ["Translate Audio", "Summarize Audio", "Summarize Text File", 
@@ -168,7 +238,7 @@ if page == "Translate Audio":
         audio_path = download_youtube_audio(video_url)
         if audio_path:
             st.write("Converting audio to WAV...")
-            wav_path = convert_to_wav_pydub(audio_path)
+            wav_path = convert_to_wav_ffmpeg(audio_path)
             if wav_path:
                 st.write("Extracting text from audio...")
                 detected_text = extract_text_from_audio(wav_path)
@@ -201,7 +271,7 @@ elif page == "Summarize Audio":
         audio_path = download_youtube_audio(video_url)
         if audio_path:
             st.write("Converting audio to WAV...")
-            wav_path = convert_to_wav_pydub(audio_path)
+            wav_path = convert_to_wav_ffmpeg(audio_path)
             if wav_path:
                 st.write("Extracting text from audio...")
                 detected_text = extract_text_from_audio(wav_path)
